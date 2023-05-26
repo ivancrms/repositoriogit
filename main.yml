@@ -34,7 +34,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties: 
       GroupDescription: !Sub "Grupo de seguridad interno para la pila ${AWS::StackName}"
-      GroupName: Group
+      GroupName: Groupgit c
       SecurityGroupIngress: 
         - IpProtocol: tcp
           FromPort: 80
