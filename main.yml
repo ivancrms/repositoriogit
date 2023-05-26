@@ -1,5 +1,34 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Creacion Grupo de Seguridad
+Parameters:
+  EC2Instance: 
+    Type: String
+    Description: Ec2Instance
+    Default: t2.small
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+  Imagen: 
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id"
+    Default: "/aws/service/canonical/ubuntu/server/20.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+  DBName:
+    Type: String
+    Description: Base de Datos
+    Default: WordPressIvan
+  DBUser:
+    Type: String
+    Description: Nombre usuario
+    Default: administrador
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: Contraseña
+    MinLength: 8
+    Default: cisco123
+
 Resources:
   SecurityGroup: 
     Type: AWS::EC2::SecurityGroup
@@ -19,17 +48,34 @@ Resources:
           FromPort: 443
           ToPort: 443
           CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+
       Tags:
         - Key: Name
           Value: !Join [ "-", [ !Ref AWS::StackName, !Ref AWS::AccountId ] ]
-          
+
+
+  
+  RDS:
+    Type: AWS::RDS::DBInstance
+    Properties: 
+      DBInstanceIdentifier: IvanDB
+      DBName: DBIvan
+      DBInstanceClass: db.t2.micro
+      AllocatedStorage: 40
+      Engine: mariadb
+      EngineVersion: "10.4"
+      MasterUsername: Ivan
+      MasterUserPassword: cisco123
+      VPCSecurityGroups:
+        - !GetAtt SecurityGroup.GroupId
+
 
   WordPressServer3:
     Type: AWS::EC2::Instance
-    CreationPolicy:
-      ResourceSignal:
-        Timeout: PT7M
-        Count: 1
     Properties:
       ImageId: ami-02396cdd13e9a1257
       IamInstanceProfile: LabInstanceProfile
@@ -40,35 +86,41 @@ Resources:
 
       UserData:
           Fn::Base64: !Sub |
-            #!/bin/bash -xe
-            sudo dnf update && sudo dnf upgrade -y
-            sudo dnf install httpd -y && sudo service httpd start
-            sudo systemctl enable httpd
-            sudo dnf install mariadb105-server -y && sudo service mariadb start
-            sudo service mariadb start
-            sudo systemctl enable mariadb
-            sudo dnf install php php-devel -y
-            echo "<?php phpinfo();?>" | sudo tee /var/www/html/phpinfo.php &>/dev/null
-            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource WordPressServer3 --region ${AWS::Region}
+            #!/bin/bash 
+            sudo dnf update -y 
+            sudo dnf install -y httpd wget php-fpm php-mysqli php-json php8.1 php-devel
+            sudo dnf install -y mariadb105
+            sudo systemctl start httpd 
+            sudo dnf install wget php-mysqlnd httpd php-fpm php-mysqli mariadb105-server php-json php php-devel -y
+            wget https://wordpress.org/latest.tar.gz
+            tar -xzf latest.tar.gz
+            sudo systemctl start mariadb httpd
+            sudo mv /wordpress/* /var/www/html
+            sudo mysqladmin -u root password 
+            sudo mysql -u Ivan -pcisco123 -P ${RDS.Endpoint.Port} -h ${RDS.Endpoint.Address} -e "CREATE DATABASE `WordPress`;
+            CREATE USER 'IvanBaseDatos'@'localhost' IDENTIFIED BY 'root';
+            GRANT ALL PRIVILEGES ON `wordpress-db`.* TO "IvanBaseDatos"@"localhost";
+            FLUSH PRIVILEGES;
+            cp wordpress/wp-config-sample.php wordpress/wp-config.php
+            sed 's/NONE/ALLOW/3' wp-config.php
+            sed 's/username_here/Ivan' wp-config.php  
+            sed 's/password_here/cisco' wp-config.php
+            mysql -e "UPDATE mysql.user SET Password = PASSWORD('CHANGEME') WHERE User = 'root'" 
+            mysql -e "DROP USER ''@'localhost'" 
+            mysql -e "DROP USER ''@'$(hostname)'" 
+            mysql -e "DROP DATABASE test" 
+            mysql -e "FLUSH PRIVILEGES""
+            exit
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource WordPressServer --region ${AWS::Region}
+           
+
       Tags:
         - Key: Name
           Value: !Join [ "-", [ !Ref AWS::StackName, !Ref AWS::AccountId ] ]
 
 
-Parameters:
-  EC2Instance: 
-    Type: String
-    Description: Ec2Instance
-    Default: t2.small
-    AllowedValues:
-      - t2.nano
-      - t2.micro
-      - t2.small
-      - t2.medium
-      - t2.large
-  EC2: 
-    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id"
-    Default: "/aws/service/canonical/ubuntu/server/20.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+
+    
     
 
 Outputs:
