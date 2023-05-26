@@ -26,6 +26,10 @@ Resources:
 
   WordPressServer3:
     Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT7M
+        Count: 1
     Properties:
       ImageId: ami-02396cdd13e9a1257
       IamInstanceProfile: LabInstanceProfile
@@ -33,12 +37,26 @@ Resources:
         - Ref: SecurityGroup
       InstanceType: t2.small
       KeyName: vockey
+
+      UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            sudo dnf update && sudo dnf upgrade -y
+            sudo dnf install httpd -y && sudo service httpd start
+            sudo systemctl enable httpd
+            sudo dnf install mariadb105-server -y && sudo service mariadb start
+            sudo service mariadb start
+            sudo systemctl enable mariadb
+            sudo dnf install php php-devel -y
+            echo "<?php phpinfo();?>" | sudo tee /var/www/html/phpinfo.php &>/dev/null
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource WordPressServer3 --region ${AWS::Region}
       Tags:
         - Key: Name
           Value: !Join [ "-", [ !Ref AWS::StackName, !Ref AWS::AccountId ] ]
 
+
 Parameters:
-  EC2Instance:
+  EC2Instance: 
     Type: String
     Description: Ec2Instance
     Default: t2.small
@@ -51,6 +69,7 @@ Parameters:
   EC2: 
     Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id"
     Default: "/aws/service/canonical/ubuntu/server/20.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+    
 
 Outputs:
   InstanceId:
